@@ -42,6 +42,16 @@ class FirestoreService {
     await _sessionsCol.doc(session.id).update(session.toFirestore());
   }
 
+  Future<void> deleteSession(String sessionId) async {
+    // Delete route subcollection document first
+    await _sessionsCol
+        .doc(sessionId)
+        .collection('route')
+        .doc('points')
+        .delete();
+    await _sessionsCol.doc(sessionId).delete();
+  }
+
   Future<RouteSession?> getActiveSession() async {
     final snap = await _sessionsCol
         .where('isActive', isEqualTo: true)

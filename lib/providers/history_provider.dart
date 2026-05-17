@@ -146,6 +146,15 @@ class HistoryNotifier extends AsyncNotifier<HistoryData> {
     }
   }
 
+  Future<void> deleteSession(String sessionId) async {
+    await FirestoreService().deleteSession(sessionId);
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(current.copyWith(
+      sessions: current.sessions.where((s) => s.id != sessionId).toList(),
+    ));
+  }
+
   Future<void> reload() async {
     _lastDoc = null;
     state = const AsyncLoading();

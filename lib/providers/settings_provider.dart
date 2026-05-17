@@ -6,28 +6,33 @@ class TrackingSettings {
   final double maxSpeedMs;
   final bool autoTracking;
   final bool recordAltitude;
+  final int autoStopMinutes;
 
   const TrackingSettings({
     required this.maxSpeedMs,
     this.autoTracking = true,
     this.recordAltitude = true,
+    this.autoStopMinutes = 10,
   });
 
   TrackingSettings copyWith({
     double? maxSpeedMs,
     bool? autoTracking,
     bool? recordAltitude,
+    int? autoStopMinutes,
   }) =>
       TrackingSettings(
         maxSpeedMs: maxSpeedMs ?? this.maxSpeedMs,
         autoTracking: autoTracking ?? this.autoTracking,
         recordAltitude: recordAltitude ?? this.recordAltitude,
+        autoStopMinutes: autoStopMinutes ?? this.autoStopMinutes,
       );
 }
 
 class SettingsNotifier extends Notifier<TrackingSettings> {
   static const _keyMaxSpeed = 'max_speed_ms';
   static const _keyAutoTracking = 'auto_tracking';
+  static const _keyAutoStop = 'auto_stop_minutes';
 
   @override
   TrackingSettings build() {
@@ -40,6 +45,7 @@ class SettingsNotifier extends Notifier<TrackingSettings> {
     state = state.copyWith(
       maxSpeedMs: prefs.getDouble(_keyMaxSpeed) ?? AppConstants.defaultMaxSpeedMs,
       autoTracking: prefs.getBool(_keyAutoTracking) ?? true,
+      autoStopMinutes: prefs.getInt(_keyAutoStop) ?? 10,
     );
   }
 
@@ -53,6 +59,12 @@ class SettingsNotifier extends Notifier<TrackingSettings> {
     state = state.copyWith(autoTracking: enabled);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyAutoTracking, enabled);
+  }
+
+  Future<void> setAutoStopMinutes(int minutes) async {
+    state = state.copyWith(autoStopMinutes: minutes);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyAutoStop, minutes);
   }
 }
 

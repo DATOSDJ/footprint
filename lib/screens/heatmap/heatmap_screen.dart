@@ -17,6 +17,7 @@ class HeatmapScreen extends ConsumerStatefulWidget {
 class _HeatmapScreenState extends ConsumerState<HeatmapScreen> {
   final _mapController = MapController();
   LatLng? _initialCenter;
+  double _currentZoom = 12;
 
   @override
   void dispose() {
@@ -77,7 +78,12 @@ class _HeatmapScreenState extends ConsumerState<HeatmapScreen> {
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _initialCenter!,
-              initialZoom: 12,
+              initialZoom: _currentZoom,
+              onMapEvent: (event) {
+                if (event is MapEventMove) {
+                  setState(() => _currentZoom = event.camera.zoom);
+                }
+              },
             ),
             children: [
               TileLayer(
@@ -137,6 +143,21 @@ class _HeatmapScreenState extends ConsumerState<HeatmapScreen> {
             ),
           ),
 
+          // Zoom controls
+          Positioned(
+            right: 16,
+            bottom: 32,
+            child: Column(
+              children: [
+                _zoomButton(Icons.add,
+                    () => _mapController.move(_mapController.camera.center, _currentZoom + 1)),
+                const SizedBox(height: 8),
+                _zoomButton(Icons.remove,
+                    () => _mapController.move(_mapController.camera.center, _currentZoom - 1)),
+              ],
+            ),
+          ),
+
           // Empty state
           if (allTiles.isEmpty)
             const Center(
@@ -154,4 +175,18 @@ class _HeatmapScreenState extends ConsumerState<HeatmapScreen> {
       ),
     );
   }
+
+  Widget _zoomButton(IconData icon, VoidCallback onTap) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: const Color(0xFF161B22).withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFF30363D)),
+          ),
+          child: Icon(icon, color: Colors.white, size: 18),
+        ),
+      );
 }

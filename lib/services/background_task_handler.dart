@@ -39,7 +39,7 @@ class LocationTaskHandler extends TaskHandler {
   // Thresholds
   static const _minSpeedMs = 0.5;
   static const _autoStartSamples = 6;   // 6 samples > min → auto-start (~18s at 3s interval)
-  static const _autoStopSecs = 300;     // 5 min stationary → auto-stop
+  int _autoStopSecs = 600;              // default 10 min stationary → auto-stop (configurable)
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -287,6 +287,9 @@ class LocationTaskHandler extends TaskHandler {
       case 'set_auto':
         _autoEnabled = data['enabled'] as bool? ?? true;
         if (!_autoEnabled && _mode == _Mode.auto) _stopAutoSession();
+      case 'set_auto_stop':
+        final minutes = (data['minutes'] as num?)?.toInt() ?? 10;
+        _autoStopSecs = minutes * 60;
     }
   }
 

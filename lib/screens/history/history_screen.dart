@@ -351,18 +351,63 @@ class _DaySection extends StatelessWidget {
 
 // ── Session row ───────────────────────────────────────────────────────────────
 
-class _SessionRow extends StatelessWidget {
+class _SessionRow extends ConsumerWidget {
   final RouteSession session;
   final bool isLast;
 
   const _SessionRow({required this.session, required this.isLast});
 
+  Future<bool> _confirmDelete(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF161B22),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            title: const Text('기록 삭제',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+            content: const Text('이 기록을 삭제할까요? 복구할 수 없습니다.',
+                style: TextStyle(color: Colors.white54, fontSize: 14)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소',
+                    style: TextStyle(color: Colors.white54)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('삭제',
+                    style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final timeStr =
         '${session.startTime.hour.toString().padLeft(2, '0')}:${session.startTime.minute.toString().padLeft(2, '0')}';
 
-    return InkWell(
+    return Dismissible(
+      key: ValueKey(session.id),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => _confirmDelete(context),
+      onDismissed: (_) =>
+          ref.read(historyProvider.notifier).deleteSession(session.id),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.15),
+          borderRadius: isLast
+              ? const BorderRadius.vertical(bottom: Radius.circular(12))
+              : BorderRadius.zero,
+        ),
+        child: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+      ),
+      child: InkWell(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -443,7 +488,8 @@ class _SessionRow extends StatelessWidget {
                 height: 1, indent: 40, color: Color(0xFF21262D)),
         ],
       ),
-    );
+      ),   // InkWell
+    );     // Dismissible
   }
 
   Widget _stat(IconData icon, String label) => Row(

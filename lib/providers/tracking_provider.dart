@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -106,11 +107,15 @@ class TrackingNotifier extends Notifier<TrackingState> {
     }
     FlutterForegroundTask.addTaskDataCallback(_onBackgroundData);
 
-    // Sync auto-tracking setting to background
+    // Sync settings to background
     final settings = ref.read(settingsProvider);
     FlutterForegroundTask.sendDataToTask({
       'command': 'set_auto',
       'enabled': settings.autoTracking,
+    });
+    FlutterForegroundTask.sendDataToTask({
+      'command': 'set_auto_stop',
+      'minutes': settings.autoStopMinutes,
     });
 
     // Check if background already has an active session (e.g., app was killed mid-session)
@@ -295,6 +300,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
   Future<void> _onAutoSessionStarted(String sessionId) async {
     if (state.isTracking) return; // Already tracking (manual session)
     _elapsedTimer?.cancel();
+    HapticFeedback.mediumImpact();
 
     RouteSession? session;
     try {

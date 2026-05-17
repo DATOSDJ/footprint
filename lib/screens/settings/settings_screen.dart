@@ -194,6 +194,95 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: 12),
 
+          // Auto-stop duration
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161B22),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF30363D)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.timer_off_outlined,
+                        color: Color(0xFF4CAF50), size: 18),
+                    const SizedBox(width: 8),
+                    const Text('자동 종료 대기 시간',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    Text(
+                      '${settings.autoStopMinutes}분',
+                      style: const TextStyle(
+                          color: Color(0xFF4CAF50),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '이 시간 동안 정지 상태이면 자동 기록을 종료합니다',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [5, 10, 15, 30].map((min) {
+                    final isSelected = settings.autoStopMinutes == min;
+                    return GestureDetector(
+                      onTap: () {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setAutoStopMinutes(min);
+                        FlutterForegroundTask.sendDataToTask({
+                          'command': 'set_auto_stop',
+                          'minutes': min,
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFF4CAF50)
+                              : const Color(0xFF0D1117),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF4CAF50)
+                                : const Color(0xFF30363D),
+                          ),
+                        ),
+                        child: Text(
+                          '$min분',
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.7),
+                            fontSize: 12,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           // Info box
           Container(
             padding: const EdgeInsets.all(14),

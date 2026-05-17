@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../data/region_data.dart';
 import '../../models/coverage_stats.dart';
 import '../../providers/coverage_provider.dart';
+import '../../providers/period_stats_provider.dart';
 
 class StatsScreen extends ConsumerWidget {
   const StatsScreen({super.key});
@@ -109,6 +110,46 @@ class _StatsBody extends StatelessWidget {
               ),
             ),
           ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── Period stats ───────────────────────────────────────
+        Consumer(
+          builder: (context, ref, _) {
+            final periodAsync = ref.watch(periodStatsProvider);
+            return periodAsync.when(
+              loading: () => Row(
+                children: [
+                  Expanded(child: _SummaryCard(label: '이번 주', value: '...', unit: 'km', icon: Icons.calendar_view_week)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _SummaryCard(label: '이번 달', value: '...', unit: 'km', icon: Icons.calendar_month)),
+                ],
+              ),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (period) => Row(
+                children: [
+                  Expanded(
+                    child: _SummaryCard(
+                      label: '이번 주',
+                      value: period.weekKm.toStringAsFixed(1),
+                      unit: 'km',
+                      icon: Icons.calendar_view_week,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _SummaryCard(
+                      label: '이번 달',
+                      value: period.monthKm.toStringAsFixed(1),
+                      unit: 'km',
+                      icon: Icons.calendar_month,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
 
         const SizedBox(height: 24),
