@@ -5,7 +5,6 @@ import 'package:latlong2/latlong.dart';
 import '../../core/constants.dart';
 import '../../providers/past_routes_provider.dart';
 import '../../providers/tracking_provider.dart';
-import 'widgets/heatmap_layer.dart';
 import 'widgets/tracking_controls.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -30,7 +29,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final tracking = ref.watch(trackingProvider);
-    final tiles = ref.read(trackingProvider.notifier).allVisitedTiles;
     final pastRoutesAsync = ref.watch(pastRoutesProvider);
 
     if (_followUser && tracking.currentPosition != null) {
@@ -65,8 +63,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 userAgentPackageName: 'com.footprintapp.footprint',
                 tileProvider: NetworkTileProvider(),
               ),
-              HeatmapLayer(tiles: tiles, mapZoom: _currentZoom),
-
               // Past session routes (faint)
               if (_showPastRoutes)
                 pastRoutesAsync.when(
@@ -230,10 +226,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     _legendItem(const Color(0xFF4CAF50), '현재 기록'),
                     const SizedBox(height: 4),
                     _legendItem(const Color(0xFF4FC3F7), '과거 경로'),
-                    const SizedBox(height: 4),
-                    _legendItem(const Color(0xFF4CAF50), '첫 방문 타일'),
-                    const SizedBox(height: 4),
-                    _legendItem(const Color(0xFFFFEB3B), '자주 방문'),
                   ],
                 ),
               ),
