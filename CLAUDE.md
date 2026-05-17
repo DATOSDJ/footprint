@@ -4,6 +4,16 @@
 걷거나 달린 경로를 지도 위에 기록하고, 방문 구역을 히트맵으로 표시하며  
 전 세계 / 대한민국 / **17개 시도 / 각 시도의 모든 구·군·시** 단위 커버리지 퍼센트를 계산하는 Flutter 앱.
 
+**GitHub**: https://github.com/DATOSDJ/footprint  
+**Firebase 프로젝트**: footprint-d0b44 (asia-northeast3 / 서울)
+
+## 현재 상태 (2026-05-17)
+- `flutter analyze` → **No issues found** ✓
+- Firebase Auth (Google 로그인) + Firestore 연결 완료 ✓
+- `lib/firebase_options.dart` 생성 완료 (gitignore 처리됨) ✓
+- Android 실기기 실행 확인 ✓ (Samsung SM-S928N)
+- GitHub push 완료 ✓
+
 ## 기술 스택
 - **Flutter 3.41.9** (iOS / Android)
 - **flutter_map 7.x** — OpenStreetMap 기반 지도 (무료, API 키 불필요)
@@ -18,7 +28,7 @@
 lib/
 ├── main.dart                    # 앱 진입점, Firebase/ForegroundTask 초기화
 ├── app.dart                     # MaterialApp, 인증 분기
-├── firebase_options.dart        # ⚠️ flutterfire configure 후 교체 필요 (현재 placeholder)
+├── firebase_options.dart        # gitignore 처리 — flutterfire configure로 재생성
 ├── core/
 │   ├── constants.dart           # 앱 전역 상수 (tileZoom=16, 속도 기본값 등)
 │   └── theme.dart               # 다크 테마, 히트맵 색상 팔레트
@@ -29,7 +39,7 @@ lib/
 │                                #   - provinceDistrictsMap, getDistrictsOf()
 ├── models/
 │   ├── location_point.dart      # GPS 포인트 모델
-│   ├── route_session.dart       # 기록 세션 모델
+│   ├── route_session.dart       # 기록 세션 모델 (formattedDistance, formattedDuration)
 │   └── coverage_stats.dart      # 커버리지 통계 모델
 │                                #   regionPercents: Map<String, double>  (지역ID→%)
 ├── services/
@@ -38,26 +48,40 @@ lib/
 │   │                            #   countVisitedInBBox() — 방문 타일만 카운트(고속)
 │   │                            #   coveragePercent() — 교집합 퍼센트
 │   ├── location_service.dart    # GPS 스트림, 속도 필터링
+│   │                            #   FilterReason enum 정의 (none/tooSlow/tooFast)
+│   │                            #   LocationUpdate.filterReason 필드
 │   ├── firestore_service.dart   # Firestore CRUD
+│   │                            #   recordCells(Map<String,int>) — 방문 횟수 정확히 기록
 │   └── background_task_handler.dart  # 백그라운드 위치 서비스 + startCallback
 ├── providers/
 │   ├── auth_provider.dart       # Firebase Auth 스트림
 │   ├── tracking_provider.dart   # 기록 상태, 타일 누적, 거리 계산
+│   │                            #   TrackingState: isWatching, filterReason, elapsedSeconds, tileVersion
+│   │                            #   startWatching() / stopWatching() — 기록 없이 GPS만 표시
+│   │                            #   _pendingTiles: Map<String,int> (Set→Map으로 수정, 횟수 정확히 기록)
 │   ├── coverage_provider.dart   # 전국 모든 지역 커버리지 % 계산 및 캐시
 │   └── settings_provider.dart   # 속도 필터 설정 (SharedPreferences)
 └── screens/
     ├── auth/login_screen.dart   # Google 로그인
-    ├── home/home_screen.dart    # BottomNav 쉘
+    ├── home/home_screen.dart    # BottomNav 쉘 (4탭: 지도/통계/기록/설정)
+    │                            #   initState에서 startWatching() 호출
     ├── map/
     │   ├── map_screen.dart      # 메인 지도 화면
     │   └── widgets/
     │       ├── heatmap_layer.dart    # 타일 히트맵 PolygonLayer
-    │       └── tracking_controls.dart # 기록 시작/중지 FAB + 속도 배지
-    ├── stats/stats_screen.dart  # 커버리지 통계 화면 (계층형 UI)
+    │       └── tracking_controls.dart # FAB + 경과시간/속도/거리 배지
+    ├── stats/stats_screen.dart  # 커버리지 통계 화면 (계층형 ExpansionTile UI)
+    ├── history/history_screen.dart   # 기록 세션 목록 (거리·시간·날짜)
     └── settings/settings_screen.dart # 속도 설정, 로그아웃
 ```
 
 ## 핵심 설계 결정
+
+### FilterReason (location_service.dart)
+- `none` — 정상 기록
+- `tooSlow` — 정지 중 (0.5 m/s 미만) → "정지 중 (미기록)"
+- `tooFast` — 속도 초과 → "속도 초과 (미기록)"
+- TrackingState.filterReason으로 UI에 전달
 
 ### 커버리지 계산 (tile_service.dart)
 - h3_dart 대신 **OSM 표준 타일 좌표계** (z/x/y) 사용. 외부 라이브러리 불필요.
@@ -105,22 +129,28 @@ users/{uid}/
 
 ### PATH 설정 (새 PowerShell 세션마다)
 ```powershell
-$env:PATH = "C:\Program Files\Git\bin;C:\Users\dongj\.puro\envs\stable\flutter\bin;C:\Users\dongj\AppData\Local\Android\Sdk\platform-tools;$env:PATH"
+$env:PATH = "C:\Program Files\Git\bin;C:\Program Files\nodejs;C:\Users\dongj\AppData\Roaming\npm;C:\Users\dongj\.puro\envs\stable\flutter\bin;C:\Users\dongj\.puro\shared\pub_cache\bin;C:\Users\dongj\AppData\Local\Android\Sdk\platform-tools;$env:PATH"
 $env:ANDROID_HOME = "C:\Users\dongj\AppData\Local\Android\Sdk"
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 ```
 
-### Firebase 설정 (1회, 사용자 직접)
+### Firebase 재연결 (새 클론 시)
 ```powershell
-# 1. console.firebase.google.com 에서 프로젝트 생성
-#    Authentication → Google 활성화
-#    Firestore → 테스트 모드 → asia-northeast3(서울)
+# FlutterFire CLI (이미 설치됨)
+dart pub global activate flutterfire_cli
 
-# 2. FlutterFire CLI로 연결
-$env:PATH = "C:\Users\dongj\.puro\shared\pub_cache\bin;$env:PATH"
+# Firebase CLI (이미 설치됨 — npm global)
+# firebase login 먼저 실행
+
 flutterfire configure
-# → lib/firebase_options.dart 자동 생성
+# footprint-d0b44 프로젝트 선택, android + ios 체크
 ```
+
+### Android 디버그 SHA-1
+```
+F6:85:44:D9:08:F5:2C:04:68:7D:D8:5E:BE:17:33:5A:BA:BA:13:5D
+```
+Firebase 콘솔 → 프로젝트 설정 → Android 앱 → 디지털 지문에 등록 필요
 
 ### 빌드 및 실행
 ```powershell
@@ -130,20 +160,13 @@ flutter build apk        # Android APK
 flutter build ios        # iOS (macOS 필요)
 ```
 
-### Android 라이선스 수락 (1회, 사용자 직접)
-```powershell
-flutter doctor --android-licenses
-# 각 라이선스마다 y 입력
-```
-
 ## 플랫폼 설정 완료 사항
 - **Android**: `minSdk = 21`, 위치 권한 4종, 포그라운드 서비스 선언
 - **iOS**: NSLocation 권한 3종, UIBackgroundModes (location, fetch)
-- **Firestore 보안 규칙**: `firestore.rules` 참고
+- **Firestore 보안 규칙**: `firestore.rules` 참고 (프로덕션 전 콘솔에 적용)
 
 ## 주의사항
-- `firebase_options.dart` 는 placeholder — `flutterfire configure` 실행 전까지 앱 시작 불가
-- Firestore 보안 규칙은 `firestore.rules` 참고 (프로덕션 전 반드시 Firestore 콘솔에 적용)
+- `firebase_options.dart` 는 .gitignore 처리 — 새 클론 시 `flutterfire configure` 재실행
 - Android 에뮬레이터에서는 위치 권한이 자동 거부될 수 있음 — 실제 기기 권장
 - 커버리지 첫 계산 시 수 초 소요 (250개 지역 bbox 연산, 이후 1시간 캐시)
-- `flutter analyze` → **No issues found** 상태 유지 (2026-05-17 기준)
+- Google 로그인 안 될 경우: Firebase 콘솔에 디버그 SHA-1 지문 등록 확인
