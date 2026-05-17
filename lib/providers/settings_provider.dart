@@ -4,36 +4,43 @@ import '../core/constants.dart';
 
 class TrackingSettings {
   final double maxSpeedMs;
+  final bool autoTracking;
   final bool recordAltitude;
-  final bool vibrateOnFilter;
 
   const TrackingSettings({
     required this.maxSpeedMs,
+    this.autoTracking = true,
     this.recordAltitude = true,
-    this.vibrateOnFilter = false,
   });
 
-  TrackingSettings copyWith({double? maxSpeedMs, bool? recordAltitude, bool? vibrateOnFilter}) =>
+  TrackingSettings copyWith({
+    double? maxSpeedMs,
+    bool? autoTracking,
+    bool? recordAltitude,
+  }) =>
       TrackingSettings(
         maxSpeedMs: maxSpeedMs ?? this.maxSpeedMs,
+        autoTracking: autoTracking ?? this.autoTracking,
         recordAltitude: recordAltitude ?? this.recordAltitude,
-        vibrateOnFilter: vibrateOnFilter ?? this.vibrateOnFilter,
       );
 }
 
 class SettingsNotifier extends Notifier<TrackingSettings> {
   static const _keyMaxSpeed = 'max_speed_ms';
+  static const _keyAutoTracking = 'auto_tracking';
 
   @override
   TrackingSettings build() {
     _load();
-    return TrackingSettings(maxSpeedMs: AppConstants.defaultMaxSpeedMs);
+    return const TrackingSettings(maxSpeedMs: AppConstants.defaultMaxSpeedMs);
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final speed = prefs.getDouble(_keyMaxSpeed) ?? AppConstants.defaultMaxSpeedMs;
-    state = state.copyWith(maxSpeedMs: speed);
+    state = state.copyWith(
+      maxSpeedMs: prefs.getDouble(_keyMaxSpeed) ?? AppConstants.defaultMaxSpeedMs,
+      autoTracking: prefs.getBool(_keyAutoTracking) ?? true,
+    );
   }
 
   Future<void> setMaxSpeed(double speedMs) async {
@@ -41,8 +48,14 @@ class SettingsNotifier extends Notifier<TrackingSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keyMaxSpeed, speedMs);
   }
+
+  Future<void> setAutoTracking(bool enabled) async {
+    state = state.copyWith(autoTracking: enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAutoTracking, enabled);
+  }
 }
 
-final settingsProvider = NotifierProvider<SettingsNotifier, TrackingSettings>(
-  SettingsNotifier.new,
-);
+final settingsProvider =
+    NotifierProvider<SettingsNotifier, TrackingSettings>(SettingsNotifier.new);
+

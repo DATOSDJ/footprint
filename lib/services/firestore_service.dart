@@ -42,6 +42,17 @@ class FirestoreService {
     await _sessionsCol.doc(session.id).update(session.toFirestore());
   }
 
+  Future<RouteSession?> getActiveSession() async {
+    final snap = await _sessionsCol
+        .where('isActive', isEqualTo: true)
+        .orderBy('startTime', descending: true)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    return RouteSession.fromFirestore(
+        snap.docs.first.id, snap.docs.first.data() as Map<String, dynamic>);
+  }
+
   Future<List<RouteSession>> getSessions({int limit = 20}) async {
     final snap = await _sessionsCol
         .orderBy('startTime', descending: true)

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/tracking_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -143,6 +144,48 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                     );
                   }).toList(),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Auto-tracking toggle
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161B22),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF30363D)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.sensors, color: Color(0xFF4CAF50), size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('자동 기록',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600)),
+                      SizedBox(height: 2),
+                      Text('앱을 열지 않아도 이동 감지 시 자동으로 기록',
+                          style: TextStyle(
+                              color: Colors.white38, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: settings.autoTracking,
+                  onChanged: (v) {
+                    ref.read(settingsProvider.notifier).setAutoTracking(v);
+                    ref.read(trackingProvider.notifier).setAutoTracking(v);
+                  },
+                  activeThumbColor: const Color(0xFF4CAF50),
+                  activeTrackColor: const Color(0xFF4CAF50).withValues(alpha: 0.5),
                 ),
               ],
             ),
