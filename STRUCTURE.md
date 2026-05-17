@@ -41,6 +41,8 @@ footprint/
 │   ├── providers/
 │   │   ├── auth_provider.dart
 │   │   ├── tracking_provider.dart
+│   │   ├── history_provider.dart
+│   │   ├── past_routes_provider.dart
 │   │   ├── coverage_provider.dart
 │   │   └── settings_provider.dart
 │   └── screens/
@@ -51,14 +53,20 @@ footprint/
 │       ├── map/
 │       │   ├── map_screen.dart
 │       │   └── widgets/
-│       │       ├── heatmap_layer.dart
 │       │       └── tracking_controls.dart
+│       ├── heatmap/
+│       │   └── heatmap_screen.dart
 │       ├── stats/
 │       │   └── stats_screen.dart
+│       ├── history/
+│       │   ├── history_screen.dart
+│       │   └── session_map_screen.dart
 │       └── settings/
 │           └── settings_screen.dart
 ├── assets/
-│   └── geojson/           # 지역 경계 데이터 (미사용 가능성 있음)
+│   └── icon/
+│       ├── app_icon.png              # 1024×1024 — 다크 배경 + 초록 발자국
+│       └── app_icon_foreground.png   # 투명 배경 (adaptive icon 전경)
 ├── android/
 ├── ios/
 ├── firestore.rules
@@ -77,9 +85,9 @@ footprint/
        └─ trackingProvider.notifier.startTracking()
             ├─ LocationService.requestPermissions()
             ├─ FirestoreService.createSession()         → Firestore 세션 생성
-            ├─ FlutterForegroundTask.startService()    → 백그라운드 알림 시작
+            ├─ FlutterForegroundTask.sendDataToTask(manual_start)
             ├─ LocationService.startListening()        → GPS 스트림 시작
-            └─ Timer(10s) → _flush()                   → Firestore 배치 쓰기
+            └─ _startElapsedTimer()                    → 1초 타이머
 
 GPS 위치 수신
   ├─ [포그라운드] LocationService._onPosition()
@@ -88,23 +96,36 @@ GPS 위치 수신
   │              └─ _processPoint()
   │
   └─ [백그라운드] LocationTaskHandler._onPosition()
-       └─ FlutterForegroundTask.sendDataToMain()
+       └─ FlutterForegroundTask.sendDataToMain({lat, lng, speed, distanceMeters, ...})
             └─ TrackingNotifier._onBackgroundData()
-                 └─ _processPoint()
+                 ├─ [auto session] state.copyWith(position, speed, distanceMeters)
+                 └─ [manual/watching] _processPoint()
 
-_processPoint(pos, speed, isFiltered)
-  ├─ state 업데이트 (currentPosition, currentSpeedMs, isFiltered)
-  ├─ [필터 통과 시]
+_processPoint(pos, speed, reason)
+  ├─ state 업데이트 (currentPosition, currentSpeedMs, filterReason)
+  ├─ [auto session] 조기 반환 (백그라운드가 경로 관리)
+  ├─ [필터 통과 + 수동 추적 시]
   │    ├─ currentRoute에 좌표 추가
   │    ├─ distanceMeters 누적
   │    ├─ TileService.latLngToTileId() → tileId 생성
-  │    ├─ _pendingTiles에 추가
-  │    └─ _allVisitedTiles 카운트 증가
-  └─ [필터 실패 시] 위치만 업데이트, 기록 안 함
+  │    └─ _allVisitedTiles 카운트 증가, tileVersion bump (새 타일 시)
+  └─ [필터 실패 시] 위치만 업데이트
+```
 
-매 10초 _flush()
-  └─ FirestoreService.recordCells(_pendingTiles)
-       └─ Firestore batch.set (count increment)
+### 자동 세션 흐름 (background_task_handler.dart)
+
+```
+백그라운드 서비스 시작 (autoRunOnBoot 포함)
+  └─ LocationTaskHandler.onStart()
+       └─ geolocator 스트림 → _onPosition()
+            ├─ [idle] 속도 > 임계값 → auto 모드 진입
+            │    ├─ FirestoreService.createSession()
+            │    └─ sendDataToMain({action: 'session_started', sessionId})
+            ├─ [auto] 위치·거리 업데이트 → sendDataToMain({isRecording: true, ...})
+            │    └─ 속도 < 임계값 지속 → 세션 종료
+            │         ├─ FirestoreService.updateSession(ended)
+            │         └─ sendDataToMain({action: 'session_stopped'})
+            └─ [manual] foreground 지시에 따라 기록 / 중지
 ```
 
 ### 커버리지 계산 흐름
@@ -121,11 +142,27 @@ StatsScreen 진입
             └─ _compute()
                  ├─ FirestoreService.loadAllCells()   → 전체 방문 타일 로드
                  ├─ TileService.worldCoveragePercent()
-                 ├─ 각 지역(한국, 시도, 구)별 _computeForRegion()
-                 │    ├─ [타일 수 > 5000] countVisitedInBBox() — 빠른 경로
-                 │    └─ [타일 수 ≤ 5000] tilesInBBox() 후 교집합 — 정확한 경로
+                 ├─ _computeForRegion(koreaRegion)    → 전국 커버리지
+                 ├─ 각 시도 _computeForRegion()       → 시도 커버리지
+                 ├─ 각 시도의 구·군 _computeDistrictCoverage()
+                 │    └─ 타일을 작은 지역 우선으로 배타적 귀속
                  ├─ FirestoreService.getSessions()    → 총 거리 합산
                  └─ FirestoreService.saveCoverageStats() → 캐시 저장
+```
+
+### 기록 히스토리 페이지네이션 흐름
+
+```
+HistoryScreen 진입
+  └─ ref.watch(historyProvider)
+       └─ HistoryNotifier.build()
+            ├─ [날짜 필터 있음] getSessionsPage(from, to) → 전체 로드
+            └─ [전체] getSessionsPage(limit: 100) → 첫 페이지
+
+스크롤 하단 400px 이내
+  └─ HistoryNotifier.loadMore()
+       ├─ [hasMore=false 또는 isLoadingMore=true] 무시
+       └─ getSessionsPage(limit: 100, startAfter: _lastDoc) → 다음 페이지 추가
 ```
 
 ---
@@ -146,6 +183,16 @@ StatsScreen 진입
 4. `FlutterForegroundTask.init()` — 알림 채널 및 주기(3초) 설정
 5. `runApp(ProviderScope(...))`
 
+**ForegroundTaskOptions 설정:**
+```dart
+ForegroundTaskOptions(
+  eventAction: ForegroundTaskEventAction.repeat(3000),
+  autoRunOnBoot: true,
+  allowWakeLock: true,
+  allowWifiLock: true,
+)
+```
+
 ---
 
 ### core
@@ -160,7 +207,6 @@ StatsScreen 진입
 | `defaultMaxSpeedMs` | 8.33 m/s | 기본 최대 속도 (30 km/h, 자전거 기준) |
 | `worldLandTilesZ16` | 800,000,000 | 전세계 커버리지 분모 (rough estimate) |
 | `koreaTilesZ16` | 780,000 | 한국 bbox 타일 수 추정치 |
-| `seoulTilesZ16` | 2,800 | 서울 bbox 타일 수 추정치 |
 | `defaultLat/Lng` | 37.5665, 126.9780 | 초기 지도 중심 (서울 시청) |
 
 `SpeedPreset` 목록 (설정 화면 선택지):
@@ -173,12 +219,6 @@ StatsScreen 진입
 #### `theme.dart`
 - 다크 테마 정의 (`AppTheme.dark`)
 - 히트맵 색상 팔레트 (`AppTheme.heatmapColor(visitCount)`)
-
-| 방문 횟수 | 색상 |
-|-----------|------|
-| 1 ~ 4 | `#4CAF50` (초록) — 첫 방문 |
-| 5 ~ 19 | `#FFEB3B` (노랑) — 자주 방문 |
-| 20+ | `#F44336` (빨강) — 단골 |
 
 ---
 
@@ -199,7 +239,8 @@ GPS 포인트 단순 모델. `LatLng` + `DateTime` + `speedMs` + `accuracy`.
 | `pointCount` | int | 기록된 GPS 포인트 수 |
 | `isActive` | bool | 현재 진행 중 여부 |
 
-`formattedDistance` getter: 1000m 미만이면 "500m", 이상이면 "1.5km" 형태 반환.
+`formattedDistance` getter: 1000m 미만이면 "500m", 이상이면 "1.5km".  
+`formattedDuration` getter: "HH:MM:SS" 또는 "MM:SS" 형태.
 
 #### `coverage_stats.dart`
 커버리지 통계 집계 결과.
@@ -209,7 +250,7 @@ GPS 포인트 단순 모델. `LatLng` + `DateTime` + `speedMs` + `accuracy`.
 | `totalCells` | int | 방문한 총 타일 수 |
 | `worldPercent` | double | 전세계 커버리지 % |
 | `koreaPercent` | double | 한국 커버리지 % |
-| `regionPercents` | Map\<String, double\> | 시도/구별 커버리지. 키: 지역 ID (예: `KR-11`, `KR-11-110`) |
+| `regionPercents` | Map\<String, double\> | 시도/구별 커버리지. 키: 지역 ID |
 | `totalDistanceKm` | double | 전체 세션 누적 거리 (km) |
 | `totalSessions` | int | 총 세션 수 |
 | `lastComputed` | DateTime? | 마지막 계산 시각 |
@@ -248,7 +289,9 @@ y = floor((1 - ln(tan(lat_rad) + sec(lat_rad)) / π) / 2 * 2^z)
 - `setMaxSpeed(speedMs)`: 설정에서 변경 시 동적으로 상한 업데이트
 
 ```dart
-isFiltered = speedMs < 0.5 || (maxSpeed < 999 && speedMs > maxSpeed)
+reason = speed < 0.5 ? FilterReason.tooSlow
+       : (maxSpeed < 999 && speed > maxSpeed) ? FilterReason.tooFast
+       : FilterReason.none;
 ```
 
 #### `firestore_service.dart`
@@ -262,17 +305,24 @@ users/{uid}/stats_cache/coverage
 users/{uid}.settings
 ```
 
-**`recordCells(List<String> cellIds)`**: Firestore batch로 `count: increment(1)`, `lastVisit`, `firstVisit` 업서트. 동일 타일 중복 방지를 위해 `.toSet()` 후 처리.
+**`recordCells(Map<String, int> tiles)`**: Firestore batch로 `count: increment(n)`, `lastVisit`, `firstVisit` 업서트.
 
-**`loadCellsSince(DateTime since)`**: `lastVisit > since` 조건으로 증분 동기화 지원 (현재 미사용).
+**`getSessionsPage({from, to, limit, startAfter})`**: 커서 기반 페이지네이션.
+- `limit: null` → 전체 로드 (날짜 필터 뷰)
+- `startAfter: DocumentSnapshot` → 다음 페이지
+- 반환: `({List<RouteSession> sessions, DocumentSnapshot? lastDoc})`
+
+**`loadCellsSince(DateTime since)`**: `lastVisit > since` 조건으로 증분 동기화 지원.
 
 #### `background_task_handler.dart`
 별도 Dart isolate에서 실행.
 
-- `@pragma('vm:entry-point')` — 트리 쉐이킹 방지를 위한 필수 어노테이션
+- `@pragma('vm:entry-point')` — 트리 쉐이킹 방지 필수 어노테이션
+- `_Mode` enum: `idle` / `auto` / `manual`
 - `LocationTaskHandler.onStart()`: geolocator 스트림 시작
-- `_onPosition()`: 위치를 `sendDataToMain({lat, lng, speed, accuracy, timestamp})`로 메인 isolate에 전송
+- `_onPosition()`: 속도·모드에 따라 자동 세션 관리 + `sendDataToMain()`
 - `onRepeatEvent()`: 3초마다 알림 텍스트를 현재 속도로 업데이트
+- `onReceiveData()`: foreground에서 `manual_start` / `manual_stop` / `set_auto` 명령 수신
 
 ---
 
@@ -294,18 +344,43 @@ users/{uid}.settings
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | `isTracking` | bool | 현재 추적 중 여부 |
+| `isWatching` | bool | GPS 수신 활성 여부 (추적 없이도 위치 표시) |
+| `isAutoSession` | bool | 백그라운드 자동 감지 세션 여부 |
 | `currentSession` | RouteSession? | 진행 중인 세션 |
-| `currentRoute` | List\<LatLng\> | 현재 세션 경로 좌표 목록 |
+| `currentRoute` | List\<LatLng\> | 현재 세션 경로 좌표 (수동 세션만) |
 | `currentSpeedMs` | double | 최신 GPS 속도 |
-| `isFiltered` | bool | 속도 필터로 제외 중인지 여부 |
+| `filterReason` | FilterReason | 속도 필터 상태 |
 | `currentPosition` | LatLng? | 최신 GPS 위치 |
 | `distanceMeters` | double | 현재 세션 누적 거리 |
+| `elapsedSeconds` | int | 현재 세션 경과 시간 (초) |
+| `tileVersion` | int | 새 타일 방문 시 increment — 히트맵 갱신 트리거 |
 
 `TrackingNotifier` 내부 상태 (non-reactive):
-- `_pendingTiles`: Firestore 배치 flush 대기 중인 타일 Set
 - `_allVisitedTiles`: 전체 방문 타일 Map (tileId → count). `allVisitedTiles` getter로 노출.
-- `_flushTimer`: 10초 주기 Firestore 배치 쓰기
+- `_elapsedTimer`: 1초 주기 경과시간 타이머
 - `_lastRecordedPoint`: 거리 계산용 직전 포인트
+
+#### `history_provider.dart`
+
+`HistoryFilter` 팩토리 생성자:
+- `HistoryFilter.all()` — 전체 (페이지네이션)
+- `HistoryFilter.today()` — 오늘
+- `HistoryFilter.thisWeek()` — 이번 주 (월요일 기준)
+- `HistoryFilter.thisMonth()` — 이번 달
+- `HistoryFilter.custom(DateTimeRange)` — 사용자 선택 범위
+
+`HistoryData` 필드:
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `sessions` | List\<RouteSession\> | 로드된 세션 목록 |
+| `hasMore` | bool | 다음 페이지 존재 여부 |
+| `isLoadingMore` | bool | 추가 로드 중 여부 |
+
+`historyFilterProvider`: `StateProvider<HistoryFilter>` — 탭 전환 시 필터 유지.
+
+#### `past_routes_provider.dart`
+세션 id 목록 + 각 세션 경로 좌표 로드. 발자국 탭이 아닌 다른 목적(현재 미사용 or 레거시)으로 존재.
 
 #### `coverage_provider.dart`
 
@@ -314,13 +389,13 @@ users/{uid}.settings
 2. 캐시가 1시간 이상 됐으면 → 백그라운드에서 재계산 후 state 교체
 3. 캐시 없으면 → 즉시 계산
 
-타일 수에 따른 두 계산 경로:
-- **빠른 경로** (타일 > 5,000): bbox 내 방문 타일 count / approximateTiles
-- **정확한 경로** (타일 ≤ 5,000): 지역 타일 전체 열거 후 교집합
+구·군 커버리지는 `_computeDistrictCoverage()`로 배타적 타일 귀속:
+- 지역을 `approximateTiles` 오름차순 정렬
+- 각 타일을 중심점 기준 가장 작은 포함 지역 하나에만 귀속
 
 #### `settings_provider.dart`
 
-`TrackingSettings` 필드: `maxSpeedMs`, `recordAltitude`, `vibrateOnFilter`
+`TrackingSettings` 필드: `maxSpeedMs`, `autoTracking`
 
 - `SharedPreferences`에 `max_speed_ms` 키로 저장
 - `build()`는 기본값으로 초기화 후 즉시 `_load()` 호출해 덮어씀
@@ -333,43 +408,53 @@ users/{uid}.settings
 Google 로그인 버튼 하나. `AuthService.signInWithGoogle()` 호출.
 
 #### `home/home_screen.dart`
-`BottomNavigationBar` 쉘. 탭: 지도(0), 통계(1), 설정(2).
-`initState`에서 `trackingProvider.notifier.loadTiles()` 호출해 Firestore에서 전체 방문 타일 로드.
+`BottomNavigationBar` 쉘. 탭: 지도(0) / 발자국(1) / 통계(2) / 기록(3) / 설정(4).  
+`initState`에서 `trackingProvider.notifier.startWatching()` 호출 → GPS + 포그라운드 서비스 시작.
 
 #### `map/map_screen.dart`
-지도 메인 화면. `flutter_map` 기반.
+지도 메인 화면. `flutter_map` 기반. **현재 세션 경로만 표시** (과거 누적 히트맵 제외).
 
 레이어 구성 (아래 → 위):
 1. `TileLayer` — OpenStreetMap 배경 타일
-2. `HeatmapLayer` — 방문 타일 히트맵 폴리곤
-3. `PolylineLayer` — 현재 세션 경로 (초록색)
-4. `MarkerLayer` — 현재 위치 원형 마커
+2. `PolylineLayer` — 현재 세션 경로 (초록색, 수동 세션만)
+3. `MarkerLayer` — 현재 위치 원형 마커
 
 UI 요소:
 - 우측 상단: OpenStreetMap 저작권 표시
 - 우측 상단 (사용자가 지도 이동 시): "내 위치로 돌아가기" 버튼
 - 우측 중단: 줌 +/- 버튼
 - 우측 하단: `TrackingFab` (기록 시작/중지)
-- 좌측 하단 (zoom ≥ 11): 히트맵 범례 (첫 방문 / 자주 방문 / 단골)
+- 하단 오버레이 (추적 중): 속도/거리/경과시간 배지
 
-`_followUser` 플래그: 사용자가 지도를 직접 드래그하면 false, "내 위치" 버튼 누르면 true.
+#### `heatmap/heatmap_screen.dart`
+누적 방문 타일 히트맵. **발자국 탭** 전용.
 
-#### `map/widgets/heatmap_layer.dart`
-zoom < 11이면 렌더링 스킵 (성능 최적화). 각 타일 ID를 `TileCoord`로 파싱 후 `tileBoundary()`로 꼭짓점 계산, `PolygonLayer`로 렌더링.
-
-#### `map/widgets/tracking_controls.dart`
-`TrackingFab`: 추적 상태에 따라 기록 시작(초록) / 기록 중지(빨강) FAB 표시.
-추적 중일 때:
-- 속도 배지: 필터 걸리면 빨간 배경 + "속도 초과 (미기록)" 표시
-- 거리 배지: 현재 세션 누적 거리 표시
+- `ref.watch(trackingProvider.select((s) => s.tileVersion))` — 새 타일 추가 시 갱신
+- `ref.read(trackingProvider.notifier).allVisitedTiles` — 전체 타일 맵
+- 타일 색상: `alpha = 0.20 + log(count+1)/log(maxCount+1) * 0.70`
+- 초기 카메라: 방문 타일 전체 centroid, zoom 14
+- 상단 우측: 총 방문 타일 수 칩
 
 #### `stats/stats_screen.dart`
-`coverageProvider`를 watch. 상단 3개 요약 카드 (방문 구역 / 총 거리 / 총 세션) + 지역별 커버리지 progress bar.
+`coverageProvider`를 watch. 상단 요약 카드 (방문 구역 / 총 거리 / 총 세션) + 지역별 커버리지.
 
-`_CoverageCard`: progress bar 색상이 커버리지에 따라 변화 (50% 이상: 초록 / 10~50%: 연초록 / 10% 미만: 반투명 초록).
+- `_fmtPct(double pct)`: 작은 값도 유효숫자 2자리 이상 동적 표시 (0.0000001% 형태 지원)
+- `_CoverageCard`: progress bar 색상이 커버리지에 따라 변화
+
+#### `history/history_screen.dart`
+`ConsumerStatefulWidget`. 기록 세션 목록.
+
+- `ScrollController` 리스너: 하단 400px 이내 → `loadMore()` 자동 호출
+- 필터 칩: 전체 / 오늘 / 이번 주 / 이번 달 / 날짜 선택(캘린더)
+- `showDateRangePicker` 다크 테마 적용
+- `_DaySection`: 날짜별 그룹, 하루 합계 거리 표시
+- `_SessionRow`: 탭 시 `SessionMapScreen`으로 이동
+
+#### `history/session_map_screen.dart`
+개별 세션 경로를 지도에 표시. `FirestoreService.loadSessionRoute()`로 경로 GeoPoint 로드.
 
 #### `settings/settings_screen.dart`
-속도 프리셋 선택 (Radio 버튼), 로그아웃 버튼.
+속도 프리셋 선택 (Radio 버튼), 배터리 최적화 제외 버튼 (`FlutterForegroundTask.requestIgnoreBatteryOptimization()`), 자동 추적 토글, 로그아웃 버튼.
 
 ---
 
@@ -419,45 +504,63 @@ tileId = "16_{x}_{y}"
 
 ### 속도 필터 판정
 ```
-isFiltered = (speed < 0.5 m/s)                        // 정지 / GPS 드리프트
-          || (maxSpeed < 999 && speed > maxSpeed)      // 차량 등 고속 이동
+reason = speed < 0.5               → FilterReason.tooSlow
+       | maxSpeed < 999
+         && speed > maxSpeed       → FilterReason.tooFast
+       | else                      → FilterReason.none
 ```
 
 ### 커버리지 % 계산
 ```
-// bbox 내 방문 타일 수 (빠른 경로)
+// bbox 내 방문 타일 수 (빠른 경로, approximateTiles > 5000)
 count = visitedSet.count(tile => isInsideBBox(tile, bbox))
 percent = (count / approximateTiles) * 100
 
-// 정확한 경로
+// 정확한 경로 (approximateTiles ≤ 5000)
 regionTiles = enumerate all tiles in bbox
 percent = |visitedSet ∩ regionTiles| / |regionTiles| * 100
 ```
 
-### Firestore 배치 전략
-- 추적 중 GPS 포인트마다 `_pendingTiles` Set에 누적
-- 10초마다 flush: batch.set으로 한 번에 upsert
-- 중복 좌표 자동 제거 (Set 특성)
+### 구·군 배타적 타일 귀속 (중복 방지)
+```
+sorted = districts.sortBy(approximateTiles ascending)  // 작은 지역 우선
+
+for tile in visitedTiles:
+  center = tileCenter(tile)
+  for district in sorted:
+    if center inside district.bbox:
+      counts[district.id] += 1
+      break  // 하나의 지역에만 귀속
+
+percent[d] = counts[d] / d.approximateTiles * 100
+```
+
+### 커서 기반 히스토리 페이지네이션
+```
+// 첫 페이지
+(sessions, lastDoc) = getSessionsPage(limit: 100)
+state = HistoryData(sessions, hasMore: sessions.length >= 100)
+
+// 다음 페이지
+(more, nextDoc) = getSessionsPage(limit: 100, startAfter: lastDoc)
+state = HistoryData(
+  sessions: [...current, ...more],
+  hasMore: more.length >= 100,
+)
+```
 
 ---
 
 ## 알려진 이슈
 
-### 1. 히트맵 실시간 미갱신
-`map_screen.dart:31`에서 `ref.read` 사용으로 인해 추적 중 새 타일 추가 시 히트맵이 자동 업데이트되지 않음.
-
-```dart
-// 현재 (반응형 아님)
-final tiles = ref.read(trackingProvider.notifier).allVisitedTiles;
-
-// 올바른 방법: TrackingState에 allVisitedTiles를 포함시키고 ref.watch 사용
-```
+### 1. 전세계 커버리지 부정확
+`worldLandTilesZ16 = 800,000,000`은 실제 육상 타일 수의 rough estimate으로, 정확한 수치가 아님. 매우 작은 비율에 영향을 줌.
 
 ### 2. H3 주석 잔재
 `firestore_service.dart`의 "H3 Cells" 주석은 초기 설계(Uber H3 라이브러리)의 흔적. 실제 구현은 OSM 타일 ID 사용.
 
-### 3. 전세계 커버리지 부정확
-`worldLandTilesZ16 = 800,000,000`은 실제 육상 타일 수의 rough estimate으로, 정확한 수치가 아님.
-
-### 4. Apple 로그인 미구현
+### 3. Apple 로그인 미구현
 `pubspec.yaml`에 `sign_in_with_apple` 의존성이 있지만 `auth_provider.dart`에 Apple 로그인 구현이 없음.
+
+### 4. 구·군 bbox 기반 귀속의 한계
+현재 구현은 bbox(사각형) 기반. 실제 행정구역 경계는 다각형이므로, bbox가 겹치지 않더라도 실제 경계를 넘는 타일이 잘못 귀속될 수 있음. 정확한 해결책은 GeoJSON 경계 데이터 사용.
