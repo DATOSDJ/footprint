@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
@@ -220,6 +221,56 @@ class SettingsScreen extends ConsumerWidget {
                 _infoRow('최소 이동 거리', '5m 이상'),
                 _infoRow('타일 크기', '줌 레벨 16 (약 600m)'),
                 _infoRow('백그라운드 기록', '포그라운드 서비스 알림'),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          _SectionLabel('시스템'),
+          const SizedBox(height: 12),
+
+          // Battery optimization
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161B22),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF30363D)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.battery_saver, color: Color(0xFF4CAF50), size: 18),
+                    SizedBox(width: 8),
+                    Text('배터리 최적화 예외',
+                        style: TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '앱이 종료되어도 24시간 백그라운드 추적을 유지하려면 배터리 최적화에서 제외해야 합니다.',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        FlutterForegroundTask.requestIgnoreBatteryOptimization(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF4CAF50),
+                      side: const BorderSide(color: Color(0xFF4CAF50)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('배터리 최적화 예외 설정'),
+                  ),
+                ),
               ],
             ),
           ),

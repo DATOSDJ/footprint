@@ -64,6 +64,57 @@ class FirestoreService {
         .toList();
   }
 
+  Future<List<RouteSession>> getSessionsInRange({
+    DateTime? from,
+    DateTime? to,
+    int limit = 300,
+  }) async {
+    Query query = _sessionsCol.orderBy('startTime', descending: true);
+    if (from != null) {
+      query = query.where('startTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(from));
+    }
+    if (to != null) {
+      query = query.where('startTime',
+          isLessThanOrEqualTo: Timestamp.fromDate(to));
+    }
+    final snap = await query.limit(limit).get();
+    return snap.docs
+        .map((d) =>
+            RouteSession.fromFirestore(d.id, d.data() as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Cursor-based page fetch. Returns sessions + the last document (for next page).
+  /// When [limit] is null, fetches ALL documents in the range (for date-filtered views).
+  Future<({List<RouteSession> sessions, DocumentSnapshot? lastDoc})>
+      getSessionsPage({
+    DateTime? from,
+    DateTime? to,
+    int? limit,
+    DocumentSnapshot? startAfter,
+  }) async {
+    Query query = _sessionsCol.orderBy('startTime', descending: true);
+    if (from != null) {
+      query = query.where('startTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(from));
+    }
+    if (to != null) {
+      query = query.where('startTime',
+          isLessThanOrEqualTo: Timestamp.fromDate(to));
+    }
+    if (startAfter != null) query = query.startAfterDocument(startAfter);
+    if (limit != null) query = query.limit(limit);
+
+    final snap = await query.get();
+    final sessions = snap.docs
+        .map((d) =>
+            RouteSession.fromFirestore(d.id, d.data() as Map<String, dynamic>))
+        .toList();
+    final lastDoc = snap.docs.isEmpty ? null : snap.docs.last;
+    return (sessions: sessions, lastDoc: lastDoc);
+  }
+
   // ── Route Points ──────────────────────────────────────────
 
   Future<void> saveSessionRoute(String sessionId, List<LatLng> points) async {

@@ -47,6 +47,27 @@ class StatsScreen extends ConsumerWidget {
   }
 }
 
+/// Formats a percentage with enough decimal places to show ~4 significant figures.
+/// e.g. 0.0000001234 → "0.0000001234", 0.001234 → "0.001234", 5.3 → "5.30"
+String _fmtPct(double pct) {
+  if (pct <= 0) return '0';
+  if (pct >= 1) return pct.toStringAsFixed(2);
+  // Find position of first non-zero digit after the decimal point
+  final s = pct.toStringAsFixed(12);
+  final dot = s.indexOf('.');
+  final firstNonZero = s.indexOf(RegExp(r'[1-9]'), dot + 1);
+  if (firstNonZero == -1) return '0';
+  final decimals = (firstNonZero - dot + 3).clamp(2, 12);
+  final result = pct.toStringAsFixed(decimals);
+  // Trim trailing zeros (but keep at least 2 decimal places)
+  final trimmed = result.replaceAll(RegExp(r'0+$'), '');
+  final parts = trimmed.split('.');
+  if (parts.length == 2 && parts[1].length < 2) {
+    return '${parts[0]}.${parts[1].padRight(2, '0')}';
+  }
+  return trimmed;
+}
+
 class _StatsBody extends StatelessWidget {
   final CoverageStats stats;
   const _StatsBody({required this.stats});
@@ -195,7 +216,7 @@ class _ProvinceExpansionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = percent.clamp(0.0, 100.0);
-    final displayPct = pct < 0.001 ? '< 0.001' : pct.toStringAsFixed(4);
+    final displayPct = _fmtPct(pct);
 
     // Sort districts by coverage descending
     final sorted = [...districts]
@@ -255,8 +276,7 @@ class _ProvinceExpansionCard extends StatelessWidget {
           ),
           children: sorted.map((district) {
             final dPct = (regionPercents[district.id] ?? 0).clamp(0.0, 100.0);
-            final dDisplay =
-                dPct < 0.001 ? '< 0.001' : dPct.toStringAsFixed(3);
+            final dDisplay = _fmtPct(dPct);
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
@@ -392,7 +412,7 @@ class _CoverageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = percent.clamp(0.0, 100.0);
-    final displayPct = pct < 0.001 ? '< 0.001' : pct.toStringAsFixed(4);
+    final displayPct = _fmtPct(pct);
 
     return Container(
       padding: EdgeInsets.all(compact ? 12 : 16),

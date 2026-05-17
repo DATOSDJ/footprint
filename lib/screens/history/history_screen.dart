@@ -1,60 +1,180 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/route_session.dart';
-import '../../providers/past_routes_provider.dart';
+import '../../providers/history_provider.dart';
 import 'session_map_screen.dart';
 
-class HistoryScreen extends ConsumerWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final routesAsync = ref.watch(pastRoutesProvider);
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  late final ScrollController _scrollCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl = ScrollController()
+      ..addListener(() {
+        if (_scrollCtrl.position.pixels >=
+            _scrollCtrl.position.maxScrollExtent - 400) {
+          ref.read(historyProvider.notifier).loadMore();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      initialDateRange: DateTimeRange(
+        start: now.subtract(const Duration(days: 6)),
+        end: now,
+      ),
+      builder: (context, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF4CAF50),
+            onPrimary: Colors.white,
+            surface: Color(0xFF161B22),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      ref.read(historyFilterProvider.notifier).state =
+          HistoryFilter.custom(picked);
+    }
+  }
+
+  void _setFilter(HistoryFilter filter) {
+    ref.read(historyFilterProvider.notifier).state = filter;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filter = ref.watch(historyFilterProvider);
+    final sessionsAsync = ref.watch(historyProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('기록'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(pastRoutesProvider.notifier).reload(),
+      appBar: AppBar(title: const Text('기록')),
+      body: Column(
+        children: [
+          // ── Filter chips ──────────────────────────────────
+          SizedBox(
+            height: 48,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _Chip(
+                  label: '전체',
+                  selected: filter.preset == FilterPreset.all,
+                  onTap: () => _setFilter(HistoryFilter.all()),
+                ),
+                _Chip(
+                  label: '오늘',
+                  selected: filter.preset == FilterPreset.today,
+                  onTap: () => _setFilter(HistoryFilter.today()),
+                ),
+                _Chip(
+                  label: '이번 주',
+                  selected: filter.preset == FilterPreset.week,
+                  onTap: () => _setFilter(HistoryFilter.thisWeek()),
+                ),
+                _Chip(
+                  label: '이번 달',
+                  selected: filter.preset == FilterPreset.month,
+                  onTap: () => _setFilter(HistoryFilter.thisMonth()),
+                ),
+                _Chip(
+                  label: filter.customLabel,
+                  icon: Icons.calendar_month_outlined,
+                  selected: filter.preset == FilterPreset.custom,
+                  onTap: _pickCustomRange,
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1, color: Color(0xFF21262D)),
+
+          // ── Content ───────────────────────────────────────
+          Expanded(
+            child: sessionsAsync.when(
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        color: Colors.red, size: 40),
+                    const SizedBox(height: 12),
+                    Text('오류: $e',
+                        style: const TextStyle(color: Colors.white54)),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () =>
+                          ref.read(historyProvider.notifier).reload(),
+                      child: const Text('다시 시도'),
+                    ),
+                  ],
+                ),
+              ),
+              data: (data) {
+                if (data.sessions.isEmpty) return _EmptyState(filter: filter);
+
+                final grouped = _groupByDate(data.sessions);
+                final dates = grouped.keys.toList()
+                  ..sort((a, b) => b.compareTo(a));
+
+                return RefreshIndicator(
+                  color: const Color(0xFF4CAF50),
+                  onRefresh: () =>
+                      ref.read(historyProvider.notifier).reload(),
+                  child: ListView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.only(bottom: 24),
+                    itemCount: dates.length + (data.isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, i) {
+                      if (i == dates.length) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF4CAF50),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final date = dates[i];
+                      return _DaySection(
+                          date: date, sessions: grouped[date]!);
+                    },
+                  ),
+                );
+              },
+            ),
           ),
         ],
-      ),
-      body: routesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('오류: $e')),
-        data: (routes) {
-          if (routes.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.route, size: 64, color: Colors.white24),
-                  SizedBox(height: 16),
-                  Text('아직 기록이 없습니다',
-                      style: TextStyle(color: Colors.white54, fontSize: 16)),
-                  SizedBox(height: 8),
-                  Text('지도 화면에서 기록을 시작해보세요',
-                      style: TextStyle(color: Colors.white38, fontSize: 13)),
-                ],
-              ),
-            );
-          }
-
-          final grouped = _groupByDate(routes.map((r) => r.session).toList());
-          final dates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: dates.length,
-            itemBuilder: (context, i) {
-              final date = dates[i];
-              final sessions = grouped[date]!;
-              return _DaySection(date: date, sessions: sessions);
-            },
-          );
-        },
       ),
     );
   }
@@ -70,8 +190,98 @@ class HistoryScreen extends ConsumerWidget {
   }
 }
 
+// ── Filter chip widget ────────────────────────────────────────────────────────
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+
+  const _Chip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF4CAF50)
+              : const Color(0xFF161B22),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF4CAF50)
+                : const Color(0xFF30363D),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 13,
+                  color: selected ? Colors.white : Colors.white54),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : Colors.white54,
+                fontSize: 13,
+                fontWeight:
+                    selected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+class _EmptyState extends StatelessWidget {
+  final HistoryFilter filter;
+  const _EmptyState({required this.filter});
+
+  @override
+  Widget build(BuildContext context) {
+    final msg = filter.preset == FilterPreset.all
+        ? '아직 기록이 없습니다'
+        : '해당 기간에 기록이 없습니다';
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.route, size: 56, color: Colors.white24),
+          const SizedBox(height: 16),
+          Text(msg,
+              style: const TextStyle(color: Colors.white54, fontSize: 16)),
+          if (filter.preset == FilterPreset.all) ...[
+            const SizedBox(height: 8),
+            const Text('지도 화면에서 기록을 시작해보세요',
+                style: TextStyle(color: Colors.white38, fontSize: 13)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Day section ───────────────────────────────────────────────────────────────
+
 class _DaySection extends StatelessWidget {
-  final String date; // "2026-05-17"
+  final String date;
   final List<RouteSession> sessions;
 
   const _DaySection({required this.date, required this.sessions});
@@ -81,10 +291,9 @@ class _DaySection extends StatelessWidget {
     final parts = date.split('-');
     final dt = DateTime(
         int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
-    final dayNames = ['월', '화', '수', '목', '금', '토', '일'];
+    const dayNames = ['월', '화', '수', '목', '금', '토', '일'];
     final dayName = dayNames[dt.weekday - 1];
-    final dateLabel =
-        '${dt.year}년 ${dt.month}월 ${dt.day}일 ($dayName)';
+    final dateLabel = '${dt.year}년 ${dt.month}월 ${dt.day}일 ($dayName)';
 
     final totalDist =
         sessions.fold<double>(0, (s, r) => s + r.distanceMeters);
@@ -95,7 +304,6 @@ class _DaySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Date header
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
@@ -120,7 +328,6 @@ class _DaySection extends StatelessWidget {
             ],
           ),
         ),
-        // Sessions for this day
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
@@ -130,10 +337,9 @@ class _DaySection extends StatelessWidget {
           ),
           child: Column(
             children: sessions.asMap().entries.map((e) {
-              final isLast = e.key == sessions.length - 1;
               return _SessionRow(
                 session: e.value,
-                isLast: isLast,
+                isLast: e.key == sessions.length - 1,
               );
             }).toList(),
           ),
@@ -142,6 +348,8 @@ class _DaySection extends StatelessWidget {
     );
   }
 }
+
+// ── Session row ───────────────────────────────────────────────────────────────
 
 class _SessionRow extends StatelessWidget {
   final RouteSession session;
@@ -158,8 +366,7 @@ class _SessionRow extends StatelessWidget {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => SessionMapScreen(session: session),
-        ),
+            builder: (_) => SessionMapScreen(session: session)),
       ),
       borderRadius: isLast
           ? const BorderRadius.vertical(bottom: Radius.circular(12))
@@ -167,53 +374,45 @@ class _SessionRow extends StatelessWidget {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
                 // Timeline dot
-                Column(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: session.isActive
-                            ? const Color(0xFF4CAF50)
-                            : const Color(0xFF30363D),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: session.isActive
-                              ? const Color(0xFF4CAF50)
-                              : const Color(0xFF58A6FF),
-                          width: 2,
-                        ),
-                      ),
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: session.isActive
+                        ? const Color(0xFF4CAF50)
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: session.isActive
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFF58A6FF),
+                      width: 2,
                     ),
-                  ],
+                  ),
                 ),
                 const SizedBox(width: 14),
-                // Time
                 SizedBox(
                   width: 44,
                   child: Text(
                     timeStr,
                     style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500),
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Stats
                 Expanded(
                   child: Row(
                     children: [
-                      _statItem(Icons.straighten,
-                          session.formattedDistance),
+                      _stat(Icons.straighten, session.formattedDistance),
                       const SizedBox(width: 12),
-                      _statItem(Icons.timer_outlined,
-                          session.formattedDuration),
+                      _stat(Icons.timer_outlined, session.formattedDuration),
                       if (session.isActive) ...[
                         const SizedBox(width: 8),
                         Container(
@@ -234,7 +433,6 @@ class _SessionRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Map arrow
                 const Icon(Icons.chevron_right,
                     color: Colors.white24, size: 18),
               ],
@@ -248,14 +446,13 @@ class _SessionRow extends StatelessWidget {
     );
   }
 
-  Widget _statItem(IconData icon, String label) => Row(
+  Widget _stat(IconData icon, String label) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 12, color: Colors.white38),
           const SizedBox(width: 4),
           Text(label,
-              style:
-                  const TextStyle(color: Colors.white54, fontSize: 12)),
+              style: const TextStyle(color: Colors.white54, fontSize: 12)),
         ],
       );
 }

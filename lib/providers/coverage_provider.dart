@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/region_data.dart';
 import '../models/coverage_stats.dart';
@@ -43,15 +45,17 @@ class CoverageNotifier extends AsyncNotifier<CoverageStats> {
 
     final regionPercents = <String, double>{};
 
-    // Compute all 시도 and their districts
+    // Compute all 시도 and their districts.
+    // Districts use exclusive tile assignment (smallest bbox wins) to prevent
+    // large counties (e.g. 울주군) from double-counting tiles inside city
+    // district bboxes that they geometrically surround.
     for (final province in koreaProvinces) {
       regionPercents[province.id] =
           _computeForRegion(ts, visitedSet, province);
 
       final districts = getDistrictsOf(province.id);
-      for (final district in districts) {
-        regionPercents[district.id] =
-            _computeForRegion(ts, visitedSet, district);
+      if (districts.isNotEmpty) {
+        _computeDistrictCoverage(ts, visitedSet, districts, regionPercents);
       }
     }
 
@@ -71,6 +75,54 @@ class CoverageNotifier extends AsyncNotifier<CoverageStats> {
 
     await FirestoreService().saveCoverageStats(stats);
     return stats;
+  }
+
+  /// Assigns each visited tile to exactly one district — the smallest-bbox
+  /// district whose bbox contains the tile's center. This eliminates the
+  /// double-counting that occurs when a large county bbox (e.g. 울주군)
+  /// geometrically contains smaller city district bboxes (e.g. 북구).
+  void _computeDistrictCoverage(
+    TileService ts,
+    Set<String> visitedSet,
+    List<RegionData> districts,
+    Map<String, double> out,
+  ) {
+    // Sort ascending by approximateTiles so the most specific (smallest) region
+    // is checked first and wins the tile assignment.
+    final sorted = [...districts]
+      ..sort((a, b) => a.approximateTiles.compareTo(b.approximateTiles));
+
+    // Compute a loose province-level bbox to skip tiles clearly outside.
+    final pMinLat = districts.map((d) => d.minLat).reduce(math.min);
+    final pMaxLat = districts.map((d) => d.maxLat).reduce(math.max);
+    final pMinLon = districts.map((d) => d.minLon).reduce(math.min);
+    final pMaxLon = districts.map((d) => d.maxLon).reduce(math.max);
+
+    final counts = <String, int>{};
+
+    for (final tileId in visitedSet) {
+      final coord = TileCoord.fromId(tileId);
+      if (coord == null) continue;
+      final c = ts.tileCenter(coord);
+
+      // Quick province-level early-out
+      if (c.latitude < pMinLat || c.latitude > pMaxLat ||
+          c.longitude < pMinLon || c.longitude > pMaxLon) continue;
+
+      // Assign to the smallest enclosing district only
+      for (final d in sorted) {
+        if (c.latitude >= d.minLat && c.latitude <= d.maxLat &&
+            c.longitude >= d.minLon && c.longitude <= d.maxLon) {
+          counts[d.id] = (counts[d.id] ?? 0) + 1;
+          break;
+        }
+      }
+    }
+
+    for (final d in districts) {
+      final count = counts[d.id] ?? 0;
+      out[d.id] = (count / d.approximateTiles * 100).clamp(0.0, 100.0);
+    }
   }
 
   double _computeForRegion(

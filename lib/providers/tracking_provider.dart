@@ -8,6 +8,7 @@ import '../services/background_task_handler.dart';
 import '../services/firestore_service.dart';
 import '../services/location_service.dart';
 import '../services/tile_service.dart';
+import 'history_provider.dart';
 import 'past_routes_provider.dart';
 import 'settings_provider.dart';
 
@@ -180,7 +181,8 @@ class TrackingNotifier extends Notifier<TrackingState> {
         currentSpeedMs: state.currentSpeedMs,
         tileVersion: state.tileVersion,
       );
-      ref.read(pastRoutesProvider.notifier).reload();
+      ref.read(historyProvider.notifier).reload();
+    ref.read(pastRoutesProvider.notifier).reload();
       return;
     }
 
@@ -202,6 +204,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
       ]);
     }
 
+    ref.read(historyProvider.notifier).reload();
     ref.read(pastRoutesProvider.notifier).reload();
 
     state = TrackingState(
@@ -311,6 +314,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
 
   void _onAutoSessionStopped() {
     _elapsedTimer?.cancel();
+    ref.read(historyProvider.notifier).reload();
     ref.read(pastRoutesProvider.notifier).reload();
     state = TrackingState(
       isWatching: true,

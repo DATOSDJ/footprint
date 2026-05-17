@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/tracking_provider.dart';
+import '../heatmap/heatmap_screen.dart';
 import '../history/history_screen.dart';
 import '../map/map_screen.dart';
 import '../settings/settings_screen.dart';
@@ -18,6 +19,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   static const _screens = [
     MapScreen(),
+    HeatmapScreen(),
     StatsScreen(),
     HistoryScreen(),
     SettingsScreen(),
@@ -44,6 +46,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             icon: Icon(Icons.map_outlined),
             activeIcon: Icon(Icons.map),
             label: '지도',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.layers_outlined),
+            activeIcon: Icon(Icons.layers),
+            label: '발자국',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bar_chart_outlined),

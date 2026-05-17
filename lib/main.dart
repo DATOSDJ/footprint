@@ -25,6 +25,7 @@ void main() async {
     foregroundTaskOptions: ForegroundTaskOptions(
       eventAction: ForegroundTaskEventAction.repeat(3000),
       autoRunOnBoot: true,
+      allowWakeLock: true,
       allowWifiLock: true,
     ),
   );
