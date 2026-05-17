@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  flutter create 후 android/app/src/main/AndroidManifest.xml 에서
+  <manifest ...> 바로 아래 다음 권한들을 추가하세요.
+  그리고 <application ...> 태그에 android:foregroundServiceType 설정도 확인하세요.
+-->
+
+<!-- 위치 권한 -->
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+<!-- 포그라운드 서비스 (백그라운드 추적) -->
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+<!-- 네트워크 -->
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+<!--
+  <application> 내부에 FlutterForegroundTask 서비스 추가:
+-->
+<service
+    android:name="com.pravera.flutter_foreground_task.service.ForegroundTaskService"
+    android:foregroundServiceType="location"
+    android:exported="false" />
