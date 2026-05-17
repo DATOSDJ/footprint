@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import '../../core/constants.dart';
+import '../../providers/past_routes_provider.dart';
 import '../../providers/tracking_provider.dart';
 import 'widgets/heatmap_layer.dart';
 import 'widgets/tracking_controls.dart';
@@ -18,6 +19,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   final _mapController = MapController();
   double _currentZoom = AppConstants.defaultZoom;
   bool _followUser = true;
+  bool _showPastRoutes = true;
 
   @override
   void dispose() {
@@ -29,6 +31,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Widget build(BuildContext context) {
     final tracking = ref.watch(trackingProvider);
     final tiles = ref.read(trackingProvider.notifier).allVisitedTiles;
+    final pastRoutesAsync = ref.watch(pastRoutesProvider);
 
     if (_followUser && tracking.currentPosition != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -63,16 +66,35 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 tileProvider: NetworkTileProvider(),
               ),
               HeatmapLayer(tiles: tiles, mapZoom: _currentZoom),
+
+              // Past session routes (faint)
+              if (_showPastRoutes)
+                pastRoutesAsync.when(
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                  data: (routes) => PolylineLayer(
+                    polylines: routes
+                        .map((r) => Polyline(
+                              points: r.points,
+                              color: const Color(0xFF4FC3F7).withValues(alpha: 0.45),
+                              strokeWidth: 2.5,
+                            ))
+                        .toList(),
+                  ),
+                ),
+
+              // Current session route (bright)
               if (tracking.currentRoute.isNotEmpty)
                 PolylineLayer(
                   polylines: [
                     Polyline(
                       points: tracking.currentRoute,
                       color: const Color(0xFF4CAF50),
-                      strokeWidth: 3,
+                      strokeWidth: 3.5,
                     ),
                   ],
                 ),
+
               if (tracking.currentPosition != null)
                 MarkerLayer(
                   markers: [
@@ -107,7 +129,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFF161B22).withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(8),
@@ -121,6 +144,32 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     ),
                   ),
                   const Spacer(),
+                  // Past routes toggle
+                  GestureDetector(
+                    onTap: () => setState(() => _showPastRoutes = !_showPastRoutes),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _showPastRoutes
+                            ? const Color(0xFF4FC3F7).withValues(alpha: 0.2)
+                            : const Color(0xFF161B22).withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _showPastRoutes
+                              ? const Color(0xFF4FC3F7)
+                              : const Color(0xFF30363D),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.route,
+                        color: _showPastRoutes
+                            ? const Color(0xFF4FC3F7)
+                            : Colors.white54,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   if (!_followUser)
                     GestureDetector(
                       onTap: () => setState(() => _followUser = true),
@@ -178,11 +227,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _legendItem(const Color(0xFF4CAF50), '첫 방문'),
+                    _legendItem(const Color(0xFF4CAF50), '현재 기록'),
+                    const SizedBox(height: 4),
+                    _legendItem(const Color(0xFF4FC3F7), '과거 경로'),
+                    const SizedBox(height: 4),
+                    _legendItem(const Color(0xFF4CAF50), '첫 방문 타일'),
                     const SizedBox(height: 4),
                     _legendItem(const Color(0xFFFFEB3B), '자주 방문'),
-                    const SizedBox(height: 4),
-                    _legendItem(const Color(0xFFF44336), '단골'),
                   ],
                 ),
               ),

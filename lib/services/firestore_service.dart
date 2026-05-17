@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:latlong2/latlong.dart';
 import '../core/constants.dart';
 import '../models/coverage_stats.dart';
 import '../models/route_session.dart';
@@ -49,6 +50,30 @@ class FirestoreService {
     return snap.docs
         .map((d) =>
             RouteSession.fromFirestore(d.id, d.data() as Map<String, dynamic>))
+        .toList();
+  }
+
+  // ── Route Points ──────────────────────────────────────────
+
+  Future<void> saveSessionRoute(String sessionId, List<LatLng> points) async {
+    if (points.isEmpty) return;
+    await _sessionsCol.doc(sessionId).collection('route').doc('points').set({
+      'points': points
+          .map((p) => GeoPoint(p.latitude, p.longitude))
+          .toList(),
+    });
+  }
+
+  Future<List<LatLng>> loadSessionRoute(String sessionId) async {
+    final doc = await _sessionsCol
+        .doc(sessionId)
+        .collection('route')
+        .doc('points')
+        .get();
+    if (!doc.exists) return [];
+    final pts = doc.data()?['points'] as List? ?? [];
+    return pts
+        .map((p) => LatLng((p as GeoPoint).latitude, p.longitude))
         .toList();
   }
 

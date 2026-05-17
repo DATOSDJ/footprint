@@ -8,6 +8,7 @@ import '../services/background_task_handler.dart';
 import '../services/firestore_service.dart';
 import '../services/location_service.dart';
 import '../services/tile_service.dart';
+import 'past_routes_provider.dart';
 import 'settings_provider.dart';
 
 class TrackingState {
@@ -160,8 +161,15 @@ class TrackingNotifier extends Notifier<TrackingState> {
         pointCount: state.currentRoute.length,
         isActive: false,
       );
-      await FirestoreService().updateSession(ended);
+      await Future.wait([
+        FirestoreService().updateSession(ended),
+        FirestoreService().saveSessionRoute(
+            state.currentSession!.id, state.currentRoute),
+      ]);
     }
+
+    // Refresh past routes on map
+    ref.read(pastRoutesProvider.notifier).reload();
 
     // Keep watching: GPS stream stays active so position dot stays visible
     state = TrackingState(
