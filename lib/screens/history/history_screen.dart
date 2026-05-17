@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/route_session.dart';
 import '../../providers/history_provider.dart';
-import 'session_map_screen.dart';
+import 'day_map_screen.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -147,7 +147,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       ref.read(historyProvider.notifier).reload(),
                   child: ListView.builder(
                     controller: _scrollCtrl,
-                    padding: const EdgeInsets.only(bottom: 24),
+                    padding: const EdgeInsets.only(top: 8, bottom: 24),
                     itemCount: dates.length + (data.isLoadingMore ? 1 : 0),
                     itemBuilder: (context, i) {
                       if (i == dates.length) {
@@ -166,7 +166,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         );
                       }
                       final date = dates[i];
-                      return _DaySection(
+                      return _DayCard(
                           date: date, sessions: grouped[date]!);
                     },
                   ),
@@ -278,13 +278,13 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-// ── Day section ───────────────────────────────────────────────────────────────
+// ── Day card ──────────────────────────────────────────────────────────────────
 
-class _DaySection extends StatelessWidget {
+class _DayCard extends StatelessWidget {
   final String date;
   final List<RouteSession> sessions;
 
-  const _DaySection({required this.date, required this.sessions});
+  const _DayCard({required this.date, required this.sessions});
 
   @override
   Widget build(BuildContext context) {
@@ -297,208 +297,99 @@ class _DaySection extends StatelessWidget {
 
     final totalDist =
         sessions.fold<double>(0, (s, r) => s + r.distanceMeters);
-    final totalDistStr = totalDist < 1000
+    final distStr = totalDist < 1000
         ? '${totalDist.toStringAsFixed(0)}m'
         : '${(totalDist / 1000).toStringAsFixed(2)}km';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              Text(
-                dateLabel,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '합계 $totalDistStr',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
+    final totalSecs = sessions.fold<int>(0, (sum, s) {
+      final end = s.endTime ?? DateTime.now();
+      return sum + end.difference(s.startTime).inSeconds;
+    });
+    final h = totalSecs ~/ 3600;
+    final m = (totalSecs % 3600) ~/ 60;
+    final durStr = h > 0 ? '${h}시간 ${m}분' : '${m}분';
+
+    final hasActive = sessions.any((s) => s.isActive);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => DayMapScreen(date: date, sessions: sessions)),
         ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: const Color(0xFF161B22),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF30363D)),
           ),
-          child: Column(
-            children: sessions.asMap().entries.map((e) {
-              return _SessionRow(
-                session: e.value,
-                isLast: e.key == sessions.length - 1,
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Session row ───────────────────────────────────────────────────────────────
-
-class _SessionRow extends ConsumerWidget {
-  final RouteSession session;
-  final bool isLast;
-
-  const _SessionRow({required this.session, required this.isLast});
-
-  Future<bool> _confirmDelete(BuildContext context) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF161B22),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            title: const Text('기록 삭제',
-                style: TextStyle(color: Colors.white, fontSize: 16)),
-            content: const Text('이 기록을 삭제할까요? 복구할 수 없습니다.',
-                style: TextStyle(color: Colors.white54, fontSize: 14)),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('취소',
-                    style: TextStyle(color: Colors.white54)),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          dateLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (hasActive) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4CAF50)
+                                  .withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('진행 중',
+                                style: TextStyle(
+                                    color: Color(0xFF4CAF50),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _stat(Icons.straighten, distStr),
+                        const SizedBox(width: 16),
+                        _stat(Icons.timer_outlined, durStr),
+                        const SizedBox(width: 16),
+                        _stat(Icons.route, '${sessions.length}회'),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('삭제',
-                    style: TextStyle(color: Colors.red)),
-              ),
+              const Icon(Icons.chevron_right,
+                  color: Colors.white24, size: 20),
             ],
           ),
-        ) ??
-        false;
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final timeStr =
-        '${session.startTime.hour.toString().padLeft(2, '0')}:${session.startTime.minute.toString().padLeft(2, '0')}';
-
-    return Dismissible(
-      key: ValueKey(session.id),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(context),
-      onDismissed: (_) =>
-          ref.read(historyProvider.notifier).deleteSession(session.id),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.15),
-          borderRadius: isLast
-              ? const BorderRadius.vertical(bottom: Radius.circular(12))
-              : BorderRadius.zero,
         ),
-        child: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
       ),
-      child: InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => SessionMapScreen(session: session)),
-      ),
-      borderRadius: isLast
-          ? const BorderRadius.vertical(bottom: Radius.circular(12))
-          : BorderRadius.zero,
-      child: Column(
-        children: [
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                // Timeline dot
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: session.isActive
-                        ? const Color(0xFF4CAF50)
-                        : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: session.isActive
-                          ? const Color(0xFF4CAF50)
-                          : const Color(0xFF58A6FF),
-                      width: 2,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    timeStr,
-                    style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Row(
-                    children: [
-                      _stat(Icons.straighten, session.formattedDistance),
-                      const SizedBox(width: 12),
-                      _stat(Icons.timer_outlined, session.formattedDuration),
-                      if (session.isActive) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50)
-                                .withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text('진행 중',
-                              style: TextStyle(
-                                  color: Color(0xFF4CAF50),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right,
-                    color: Colors.white24, size: 18),
-              ],
-            ),
-          ),
-          if (!isLast)
-            const Divider(
-                height: 1, indent: 40, color: Color(0xFF21262D)),
-        ],
-      ),
-      ),   // InkWell
-    );     // Dismissible
+    );
   }
 
   Widget _stat(IconData icon, String label) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: Colors.white38),
+          Icon(icon, size: 13, color: Colors.white54),
           const SizedBox(width: 4),
           Text(label,
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              style: const TextStyle(color: Colors.white70, fontSize: 13)),
         ],
       );
 }

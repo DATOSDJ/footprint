@@ -60,13 +60,13 @@ class _HeatmapScreenState extends ConsumerState<HeatmapScreen> {
       if (coord == null) return const <Polygon>[];
       final bounds = TileService().tileBoundary(coord);
       final ratio = math.log(e.value + 1) / math.log(maxCount + 1);
-      final alpha = 0.20 + ratio * 0.70;
+      final alpha = 0.45 + ratio * 0.45;
       return [
         Polygon(
           points: bounds,
-          color: Color.fromRGBO(76, 175, 80, alpha),
-          borderColor: Colors.transparent,
-          borderStrokeWidth: 0,
+          color: Color.fromRGBO(33, 150, 243, alpha), // blue — clear contrast against OSM green/grey
+          borderColor: const Color(0xFF0D47A1),
+          borderStrokeWidth: 0.8,
         ),
       ];
     }).toList();
@@ -124,18 +124,30 @@ class _HeatmapScreenState extends ConsumerState<HeatmapScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50).withValues(alpha: 0.15),
+                        color: const Color(0xFF2196F3).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: const Color(0xFF4CAF50)
+                            color: const Color(0xFF2196F3)
                                 .withValues(alpha: 0.5)),
                       ),
-                      child: Text(
-                        '${allTiles.length} 구역',
-                        style: const TextStyle(
-                            color: Color(0xFF4CAF50),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${allTiles.length} / ${AppConstants.koreaTilesZ16}',
+                            style: const TextStyle(
+                                color: Color(0xFF64B5F6),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13),
+                          ),
+                          const Text(
+                            '한국 전체 타일 기준',
+                            style: TextStyle(
+                                color: Color(0xFF64B5F6),
+                                fontSize: 10),
+                          ),
+                        ],
                       ),
                     ),
                 ],
